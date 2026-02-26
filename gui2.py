@@ -651,6 +651,10 @@ class GulliverApp(ctk.CTk):
                                             "modem", "valid", "fail"
                                         ),
                                     )
+                        # Detect FWVER in log
+                        if "FWVER:" in line:
+                            fwver_val = line.split("FWVER:")[-1].split()[0].strip()
+                            self.device_data["FWVER"] = fwver_val
                         if self.stop_requested:
                             break
                         line = self.ser.readline().decode(errors="ignore").strip()
@@ -959,7 +963,7 @@ class GulliverApp(ctk.CTk):
                 f.write(f"MODEMVER: {modemver_raw}\n")
                 f.write(f"DATE: {date_str} {time_str}\n")
                 f.write(f"ESP32 FW: Flashed & Validated ({esp_status})\n")
-                f.write(f"MCU FW: {self.mcu_fw_version} ({mcu_status})\n")
+                f.write(f"MCU FW: Flashed & Validated ({mcu_status})\n")
                 f.write(
                     f"FINAL TEST STATUS: {self.device_data.get('Status', 'FAIL')}\n"
                 )
