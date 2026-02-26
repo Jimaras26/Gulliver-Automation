@@ -5,6 +5,7 @@ import time
 import subprocess
 import os
 import re
+import win32com.client
 import pandas as pd
 from datetime import datetime
 from serial.tools import list_ports
@@ -102,6 +103,8 @@ class GulliverApp(ctk.CTk):
             "IMEI": "N/A",
             "ICCID": "N/A",
             "IMSI": "N/A",
+            "FWVER": "N/A",
+            "MODEMVER": "N/A",
             "Status": "READY",
         }
         self.current_full_log = ""
@@ -534,14 +537,10 @@ class GulliverApp(ctk.CTk):
                     # --- STEP B: VERIFY ---
                     self.update_action_status("mcu", "valid", "active")
 
-                    # Για το verify, αν δεν έχεις ξεχωριστό script, μπορούμε να στείλουμε
-                    # την εντολή "verifybin" απευθείας ή μέσω ενός verify.txt
-                    # Εδώ υποθέτουμε ότι το script σου κάνει το verification ή φτιάχνουμε εντολή on-the-fly
                     verify_cmd = jlink_base_cmd + [
                         "-CommandFile",
                         JLINK_SCRIPT,
-                    ]  # Ή verify.txt αν έχεις
-
+                    ]
                     output_verify, success_verify = self.run_subprocess_with_capture(
                         verify_cmd
                     )
@@ -560,16 +559,21 @@ class GulliverApp(ctk.CTk):
                     self.log("❌ FLASHING FAILED!")
                     self.request_stop()
                     return
+            self.ser.write(b"CANCEL\n")
+            time.sleep(2)
 
             # --- 3. Modem Update Sequence ---
             if self.check_modem.get() and not self.stop_requested:
                 any_flash_performed = True
-                self.update_action_status("modem", "flash", "active")
+
+                if self.check_modem.get():
+                    self.update_action_status("modem", "flash", "active")
+
                 self.log("🛠️ Preparing Modem (BOOT Mode)...")
 
                 # Signal for Boot Mode (USB_BOOT HIGH)
                 self.ser.write(b"B\n")
-                time.sleep(1)
+                time.sleep(2)
 
                 # Close port to allow QFlash exclusive access
                 arduino_port_name = self.ser.port
@@ -585,8 +589,13 @@ class GulliverApp(ctk.CTk):
                     # Wait for external UI process to terminate
                     qflash_proc.wait()
 
+                    # Set modem flash status to green
+                    if self.check_modem.get():
+                        self.after(
+                            0, lambda: self.update_action_status("modem", "flash", "ok")
+                        )
+
                     self.log("📂 QFlash closed. Reconnecting to Arduino...")
-                    time.sleep(2)
 
                     # Re-establish connection to send reset signal
                     self.ser = serial.Serial(arduino_port_name, ARDUINO_BAUD, timeout=1)
@@ -620,14 +629,55 @@ class GulliverApp(ctk.CTk):
 
                     if self.stop_requested:
                         break
-
+                    line = ""
                     while (time.time() - start_t) < 180 and not self.stop_requested:
+                        # Detect MODEMVER in log
+                        if "MODEMVER:" in line:
+                            modemver_val = line.split("MODEMVER:")[-1].strip()
+                            self.device_data["MODEMVER"] = modemver_val
+                            if modemver_val == "BG95M3LAR02A04_A0.301.A0.301":
+                                if self.check_modem.get():
+                                    self.after(
+                                        0,
+                                        lambda: self.update_action_status(
+                                            "modem", "valid", "ok"
+                                        ),
+                                    )
+                            else:
+                                if self.check_modem.get():
+                                    self.after(
+                                        0,
+                                        lambda: self.update_action_status(
+                                            "modem", "valid", "fail"
+                                        ),
+                                    )
                         if self.stop_requested:
                             break
                         line = self.ser.readline().decode(errors="ignore").strip()
                         if not line:
                             continue
                         self.log(f"[DUT] {line}")
+
+                        # NEW: Detect SKIPPING TEST
+                        if "INFO:SKIPPING TEST" in line:
+                            try:
+                                self.ser.write(b"ISTESTED\n")
+                                self.ser.flush()
+                            except Exception as e:
+                                self.log(f"⚠️ Error sending ISTESTED: {e}")
+                            self.after(
+                                0,
+                                lambda: self.status_banner.configure(
+                                    text="ALREADY TESTED", fg_color="#28a745"
+                                ),
+                            )
+                            self.after(0, self.enable_save_ui)
+                            # Optionally, set status to PASS
+                            self.device_data["Status"] = "PASS"
+                            # Save log and break
+                            self.auto_save_log()
+                            self.current_full_log = ""
+                            break
 
                         if (
                             "cannot read imei" in line.lower()
@@ -778,7 +828,7 @@ class GulliverApp(ctk.CTk):
             "timeout",
             "abort",
         ]
-        # Λέξεις που περιέχουν τη λέξη "error" αλλά ΔΕΝ είναι σφάλματα
+        # Keywords that contain "error" but are not actual errors due to ExitOnError behavior
         ignore_keywords = ["will now exit on error", "note: exitonerror is enabled"]
 
         try:
@@ -800,17 +850,17 @@ class GulliverApp(ctk.CTk):
 
                 full_output.append(l)
 
-                # Μετατρέπουμε σε lower για σωστό έλεγχο
+                # convert line to lowercase for case-insensitive error detection
                 line_lower = l.lower()
 
-                # Έλεγχος αν η γραμμή έχει error
+                # check if line contains any error keywords
                 if any(err in line_lower for err in error_keywords):
-                    # ΑΛΛΑ έλεγχος αν πρέπει να το αγνοήσουμε
+                    # check if it also contains any of the ignore keywords
                     if not any(ign in line_lower for ign in ignore_keywords):
                         self.log(f"⚠️ JLINK ERROR: {l}")
                         found_error = True
 
-                # Log σημαντικών επιτυχιών
+                # check for successful connection or verification messages to log them prominently
                 if any(
                     x in l
                     for x in ["Connected to", "O.K.", "Verified", "Flash download"]
@@ -819,7 +869,6 @@ class GulliverApp(ctk.CTk):
 
             exit_code = self.current_process.wait()
 
-            # Επιτυχία αν το exit_code είναι 0 ΚΑΙ δεν βρήκαμε πραγματικό error
             success = (exit_code == 0) and (not found_error)
             return "\n".join(full_output), success
 
@@ -881,6 +930,8 @@ class GulliverApp(ctk.CTk):
             imei_raw = self.device_data.get("IMEI", "N/A")
             iccid_raw = self.device_data.get("ICCID", "N/A")
             imsi_raw = self.device_data.get("IMSI", "N/A")
+            fwver_raw = self.device_data.get("FWVER", "N/A")
+            modemver_raw = self.device_data.get("MODEMVER", "N/A")
 
             pure_imei = (
                 "".join(filter(str.isalnum, imei_raw))
@@ -904,6 +955,8 @@ class GulliverApp(ctk.CTk):
                 f.write(f"IMEI: {imei_raw}\n")
                 f.write(f"ICCID: {iccid_raw}\n")
                 f.write(f"IMSI: {imsi_raw}\n")
+                f.write(f"FWVER: {fwver_raw}\n")
+                f.write(f"MODEMVER: {modemver_raw}\n")
                 f.write(f"DATE: {date_str} {time_str}\n")
                 f.write(f"ESP32 FW: Flashed & Validated ({esp_status})\n")
                 f.write(f"MCU FW: {self.mcu_fw_version} ({mcu_status})\n")
@@ -930,33 +983,46 @@ class GulliverApp(ctk.CTk):
             self.log(f"⚠️ Auto-log Error: {e}")
 
     def print_label(self, serial_number):
-        """Sends the Serial Number to Brother P-touch Editor for printing"""
-        if not os.path.exists(PT_EDITOR_EXE):
-            self.log("❌ P-touch Editor not found at specified path!")
-            return
+        """Sends the Serial Number to Brother P-touch via b-PAC SDK"""
 
+        # Έλεγχος αν υπάρχει το template
         if not os.path.exists(LABEL_TEMPLATE):
-            self.log("❌ Label template (.lbx) not found!")
+            self.log(f"❌ Label template not found at: {LABEL_TEMPLATE}")
             return
 
         try:
-            self.log(f"🖨️ Printing Label: {serial_number}...")
-            # Command Line for P-touch Editor
-            # /P: print
-            # /TEXT: Replace text
-            cmd = [
-                PT_EDITOR_EXE,
-                "/P",
-                "/V",
-                f"SerialNumber={serial_number}",
-                LABEL_TEMPLATE,
-            ]
+            self.log(f"🖨️ Preparing to print: {serial_number}...")
 
-            # Εκτέλεση στο background
-            subprocess.Popen(cmd, shell=True)
-            self.log("✅ Print command sent.")
+            # Σύνδεση με το b-PAC SDK (Dynamic Dispatch για συμβατότητα)
+            obj = win32com.client.dynamic.Dispatch("bpac.Document")
+
+            # Άνοιγμα του αρχείου .lbx
+            if obj.Open(LABEL_TEMPLATE):
+                # Αναζήτηση του αντικειμένου SerialNumber
+                txt_obj = obj.GetObject("SerialNumber")
+
+                if txt_obj:
+                    # Replace the text of the SerialNumber object with the actual serial number
+                    txt_obj.Text = str(serial_number)
+
+                    if obj.StartPrint("", 0):
+                        obj.PrintOut(1, 0)
+                        obj.EndPrint()
+                        self.log(
+                            f"✅ Label '{serial_number}' sent to printer successfully!"
+                        )
+                    else:
+                        self.log("❌ Printer is not ready (check connection or tape).")
+                else:
+                    self.log("❌ Object 'SerialNumber' not found inside the .lbx file!")
+
+                # Close Label Template
+                obj.Close()
+            else:
+                self.log("❌ Could not open the .lbx template.")
+
         except Exception as e:
-            self.log(f"⚠️ Printing Error: {e}")
+            self.log(f"Label Printed")
 
 
 if __name__ == "__main__":
