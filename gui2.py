@@ -432,7 +432,7 @@ class GulliverApp(ctk.CTk):
         if self.ser and self.ser.is_open:
             try:
                 self.ser.write(b"CANCEL\n")
-                self.ser.write(b"POWER_OFF\n")  # Double safety redundancy
+                # self.ser.write(b"POWER_OFF\n")  # Double safety redundancy
                 if fail:
                     self.ser.write(b"TESTFAILED\n")
                 self.ser.flush()
@@ -494,16 +494,53 @@ class GulliverApp(ctk.CTk):
                 ] + FLASH_ARGS
                 if not self.run_subprocess(cmd):
                     self.update_action_status("esp", "flash", "fail")
-                    self.request_stop()
-                    return
-                self.update_action_status("esp", "flash", "ok")
-                self.update_action_status("esp", "valid", "ok")
+                    self.log(
+                        "🧹 ESP flash failed → Performing MCU full erase & retrying ESP flash..."
+                    )
+
+                    erase_cmd = [
+                        JLINK_EXE,
+                        "-device",
+                        "nRF52840_xxAA",
+                        "-if",
+                        "SWD",
+                        "-speed",
+                        "4000",
+                        "-autoconnect",
+                        "1",
+                        "-ExitOnError",
+                        "1",
+                        "-CommanderScript",
+                        os.path.join(BASE_DIR, "erase.txt"),
+                    ]
+
+                    if not self.run_subprocess(erase_cmd):
+                        self.log("❌ MCU ERASE FAILED!")
+                        self.request_stop()
+                        return
+
+                    self.log("✅ MCU erase completed. Retrying ESP flash...")
+                    self.ser.write(b"CANCEL\n")
+                    time.sleep(2)
+                    self.ser.write(b"P\n")
+                    time.sleep(2)
+
+                    # Retry ESP flash once
+                    if not self.run_subprocess(cmd):
+                        self.log("❌ ESP flash FAILED again after MCU erase!")
+                        self.update_action_status("esp", "flash", "fail")
+                        self.request_stop()
+                        return
+
+                    self.log("✅ ESP flash succeeded after MCU erase.")
+                    self.update_action_status("esp", "flash", "ok")
+                    self.update_action_status("esp", "valid", "ok")
 
             # --- 2. MCU (J-Link) Flashing & Verification ---
             if self.check_mcu.get() and not self.stop_requested:
                 any_flash_performed = True
                 self.log("🚀 Powering ON (MCU Mode)..."), self.ser.write(b"O\n")
-                time.sleep(2)  # Wait to initialize MCU
+                time.sleep(1)  # Wait to initialize MCU
 
                 # Common flags for JLink
                 jlink_base_cmd = [
@@ -614,9 +651,9 @@ class GulliverApp(ctk.CTk):
                     and not self.stop_requested
                 ):
                     attempts += 1
-                    time.sleep(3)
+                    time.sleep(2)
                     self.ser.write(b"CANCEL\n")
-                    time.sleep(2.0)
+                    time.sleep(2)
                     self.log(
                         f"🚀 Powering ON for Test (Attempt {attempts}/{max_attempts})..."
                     )
