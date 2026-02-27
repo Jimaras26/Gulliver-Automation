@@ -11,11 +11,18 @@ from datetime import datetime
 from serial.tools import list_ports
 import tkinter as tk
 from PIL import Image, ImageTk
+import sys
+import time
+from serial.tools import list_ports
+
 
 # ================= CONFIGURATION =================
 VERSION = "v2.0"
 ARDUINO_BAUD = 9600
 ESP_BAUD = 921600
+QUECTEL_VID = 0x2C7C
+QUECTEL_PID = 0x0700
+
 BASE_DIR = r"C:\Users\DimitrisOikonomou\Desktop\Gulliver_Testing"
 EXCEL_PATH = os.path.join(BASE_DIR, "Gulliver_Production_Log.xlsx")
 
@@ -396,6 +403,9 @@ class GulliverApp(ctk.CTk):
         self.log_view.configure(state="normal")
         self.log_view.delete("1.0", "end")
         self.log_view.configure(state="disabled")
+        # Disable serial number entry and assign button at the start of each test
+        self.sn_entry.configure(state="disabled")
+        self.assign_btn.configure(state="disabled")
         for lbl in self.test_labels:
             lbl.configure(
                 fg_color="#333333",
@@ -492,7 +502,10 @@ class GulliverApp(ctk.CTk):
                     "--baud",
                     str(ESP_BAUD),
                 ] + FLASH_ARGS
-                if not self.run_subprocess(cmd):
+                if self.run_subprocess(cmd):
+                    self.update_action_status("esp", "flash", "ok")
+                    self.update_action_status("esp", "valid", "ok")
+                else:
                     self.update_action_status("esp", "flash", "fail")
                     self.log(
                         "🧹 ESP flash failed → Performing MCU full erase & retrying ESP flash..."
@@ -540,7 +553,7 @@ class GulliverApp(ctk.CTk):
             if self.check_mcu.get() and not self.stop_requested:
                 any_flash_performed = True
                 self.log("🚀 Powering ON (MCU Mode)..."), self.ser.write(b"O\n")
-                time.sleep(1)  # Wait to initialize MCU
+                time.sleep(2)  # Wait to initialize MCU
 
                 # Common flags for JLink
                 jlink_base_cmd = [
@@ -617,28 +630,58 @@ class GulliverApp(ctk.CTk):
                 self.ser.close()
                 self.log("🔌 Arduino port released for QFlash.")
 
-                if os.path.exists(QFLASH_EXE):
-                    self.log("🚀 Launching QFlash...")
-                    qflash_proc = subprocess.Popen(
-                        [QFLASH_EXE, FW_XML], cwd=QFLASH_PATH, shell=True
+                # Wait up to 15 seconds for Quectel diagnostics port
+                diag_port = None
+                self.log("⏳ Waiting for Quectel diagnostics port (up to 15s)...")
+                for _ in range(15):
+                    ports = list_ports.comports()
+                    for p in ports:
+                        if p.vid == QUECTEL_VID and p.pid == QUECTEL_PID:
+                            diag_port = p.device
+                            break
+                    if diag_port:
+                        break
+                    time.sleep(1)
+
+                if diag_port:
+                    self.log(
+                        f"✅ Quectel diagnostics port found: {diag_port}. Proceeding with QFlash."
                     )
-
-                    # Wait for external UI process to terminate
-                    qflash_proc.wait()
-
-                    # Set modem flash status to green
-                    if self.check_modem.get():
-                        self.after(
-                            0, lambda: self.update_action_status("modem", "flash", "ok")
+                    if os.path.exists(QFLASH_EXE):
+                        self.log("🚀 Launching QFlash...")
+                        qflash_proc = subprocess.Popen(
+                            [QFLASH_EXE, FW_XML], cwd=QFLASH_PATH, shell=True
                         )
 
-                    self.log("📂 QFlash closed. Reconnecting to Arduino...")
+                        # Wait for external UI process to terminate
+                        qflash_proc.wait()
 
-                    # Re-establish connection to send reset signal
+                        # Set modem flash status to green
+                        if self.check_modem.get():
+                            self.after(
+                                0,
+                                lambda: self.update_action_status(
+                                    "modem", "flash", "ok"
+                                ),
+                            )
+
+                        self.log("📂 QFlash closed. Reconnecting to Arduino...")
+
+                        # Re-establish connection to send reset signal
+                        self.ser = serial.Serial(
+                            arduino_port_name, ARDUINO_BAUD, timeout=1
+                        )
+                        time.sleep(2)
+                        self.ser.write(b"CANCEL\n")
+                        self.log("✅ Arduino Reset Sent.")
+                else:
+                    self.log(
+                        "❌ Quectel diagnostics port not found after 15s. Skipping QFlash and proceeding to functional test."
+                    )
+                    # Reconnect Arduino for next steps
                     self.ser = serial.Serial(arduino_port_name, ARDUINO_BAUD, timeout=1)
                     time.sleep(2)
                     self.ser.write(b"CANCEL\n")
-                    self.log("✅ Arduino Reset Sent.")
 
             # --- 4. Functional Testing Sequence ---
             if self.check_test_mode.get() and not self.stop_requested:
@@ -715,8 +758,7 @@ class GulliverApp(ctk.CTk):
                             self.after(0, self.enable_save_ui)
                             # Optionally, set status to PASS
                             self.device_data["Status"] = "PASS"
-                            # Save log and break
-                            self.auto_save_log()
+                            # Do NOT save log if already tested
                             self.current_full_log = ""
                             break
 
