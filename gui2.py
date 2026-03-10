@@ -597,7 +597,7 @@ class GulliverApp(ctk.CTk):
 
                     if success_verify:
                         self.update_action_status("mcu", "valid", "ok")
-                        self.log("double_check ✅ MCU Verified & Validated!")
+                        self.log("✅ MCU Verified & Validated!")
                         time.sleep(2)
                     else:
                         self.update_action_status("mcu", "valid", "fail")
@@ -610,7 +610,7 @@ class GulliverApp(ctk.CTk):
                     self.request_stop()
                     return
             self.ser.write(b"CANCEL\n")
-            time.sleep(2)
+            time.sleep(1)
 
             # --- 3. Modem Update Sequence ---
             if self.check_modem.get() and not self.stop_requested:
@@ -677,6 +677,12 @@ class GulliverApp(ctk.CTk):
                 else:
                     self.log(
                         "❌ Quectel diagnostics port not found after 15s. Skipping QFlash and proceeding to functional test."
+                    )
+                    self.after(
+                        0, lambda: self.update_action_status("modem", "flash", "fail")
+                    )
+                    self.after(
+                        0, lambda: self.update_action_status("modem", "valid", "fail")
                     )
                     # Reconnect Arduino for next steps
                     self.ser = serial.Serial(arduino_port_name, ARDUINO_BAUD, timeout=1)
@@ -894,7 +900,7 @@ class GulliverApp(ctk.CTk):
                         self.log(f"📦 FW detected: {clean_name}")
                         self.mcu_fw_version = clean_name
                     else:
-                        self.log(f"[Tool] {l}")
+                        self.log(f"[ESP32-C3] {l}")
             return self.current_process.wait() == 0
         except:
             return False
@@ -960,7 +966,7 @@ class GulliverApp(ctk.CTk):
             return str(e), False
 
     def save_all_data(self):
-        """Append production results to the master Excel log"""
+        """Append production results to the daily Excel log inside the daily folder"""
         sn = self.sn_entry.get().strip()
         if not sn:
             return
@@ -968,6 +974,18 @@ class GulliverApp(ctk.CTk):
         try:
             date_str = datetime.now().strftime("%Y-%m-%d")
             time_str = datetime.now().strftime("%H:%M:%S")
+
+            # Daily folder path
+            folder_path = os.path.join(
+                BASE_DIR, f"Gulliver Tested Devices ({date_str})"
+            )
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+
+            # Excel file path for the day
+            excel_path = os.path.join(
+                folder_path, f"Gulliver_Production_Log_{date_str}.xlsx"
+            )
 
             new_data = {
                 "Date": [date_str],
@@ -980,13 +998,13 @@ class GulliverApp(ctk.CTk):
             }
             df_new = pd.DataFrame(new_data)
 
-            if os.path.exists(EXCEL_PATH):
-                df_old = pd.read_excel(EXCEL_PATH)
+            if os.path.exists(excel_path):
+                df_old = pd.read_excel(excel_path)
                 df_final = pd.concat([df_old, df_new], ignore_index=True, sort=False)
             else:
                 df_final = df_new
 
-            df_final.to_excel(EXCEL_PATH, index=False)
+            df_final.to_excel(excel_path, index=False)
             self.log(f"✅ Excel Updated: SN {sn}")
 
             # Print Label
