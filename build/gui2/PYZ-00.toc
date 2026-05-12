@@ -1,4 +1,4 @@
-('C:\\Users\\DimitrisOikonomou\\Scripts\\FEN_0 07_2025\\Gulliver '
+('C:\\Users\\DimitrisOikonomou\\Desktop\\Gulliver_Testing\\Gulliver '
  'Automation\\build\\gui2\\PYZ-00.pyz',
  [('PIL',
    'C:\\Users\\DimitrisOikonomou\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PIL\\__init__.py',
