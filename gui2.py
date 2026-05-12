@@ -15,7 +15,6 @@ import sys
 import time
 from serial.tools import list_ports
 
-
 # ================= CONFIGURATION =================
 VERSION = "v2.0"
 ARDUINO_BAUD = 9600
@@ -23,7 +22,10 @@ ESP_BAUD = 921600
 QUECTEL_VID = 0x2C7C
 QUECTEL_PID = 0x0700
 
-BASE_DIR = r"C:\Users\DimitrisOikonomou\Desktop\Gulliver_Testing"
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = r"C:\Users\DimitrisOikonomou\Desktop\Gulliver_Testing"
 EXCEL_PATH = os.path.join(BASE_DIR, "Gulliver_Production_Log.xlsx")
 
 # ======= JLINK Configuration (Main MCU) =========
@@ -32,9 +34,11 @@ JLINK_SCRIPT = os.path.join(BASE_DIR, "flash.txt")
 JLINK_LOG = os.path.join(BASE_DIR, r"logs\jlink_log.txt")
 
 # ======= Modem Update Configuration (Optional) =========
-QFLASH_PATH = r"C:\Users\DimitrisOikonomou\Desktop\Gulliver_Testing\QFlash_V7.7"
+QFLASH_PATH = os.path.join(BASE_DIR, "QFlash_V7.7")
 QFLASH_EXE = os.path.join(QFLASH_PATH, "QFlash_V7.7.exe")
-FW_XML = r"C:\Users\DimitrisOikonomou\Desktop\Gulliver_Testing\bg95update\update\firehose\rawprogram_nand_p2K_b128K.xml"
+FW_XML = os.path.join(
+    BASE_DIR, r"bg95update\update\firehose\rawprogram_nand_p2K_b128K.xml"
+)
 
 # ======= ESP32-C3 Flash Files ========
 ESP_FW_PATH = os.path.join(BASE_DIR, r"ESPFW\ESP32-C3-MINI-1-V3.2.0.0")
@@ -56,6 +60,11 @@ FLASH_ARGS = [
     "0x1F000",
     os.path.join(ESP_FW_PATH, r"customized_partitions\mfg_nvs.bin"),
 ]
+# ======= esptool Command ========
+if getattr(sys, "frozen", False):
+    ESPTOOL_CMD = [os.path.join(BASE_DIR, "esptool.exe")]
+else:
+    ESPTOOL_CMD = ["python", "-m", "esptool"]
 # ======= Printer Configuration (Brother P-touch) =========
 # Η διαδρομή του εκτελέσιμου του P-touch Editor (συνήθως είναι αυτή)
 PT_EDITOR_EXE = r"C:\Program Files (x86)\Brother\Ptedit54\ptedit54.exe"
@@ -491,17 +500,18 @@ class GulliverApp(ctk.CTk):
                 self.update_action_status("esp", "flash", "active")
                 self.log("🚀 Powering ON (ESP Mode)..."), self.ser.write(b"P\n")
                 time.sleep(2)
-                cmd = [
-                    "python",
-                    "-m",
-                    "esptool",
-                    "--chip",
-                    "esp32c3",
-                    "--port",
-                    esp_port,
-                    "--baud",
-                    str(ESP_BAUD),
-                ] + FLASH_ARGS
+                cmd = (
+                    ESPTOOL_CMD
+                    + [
+                        "--chip",
+                        "esp32c3",
+                        "--port",
+                        esp_port,
+                        "--baud",
+                        str(ESP_BAUD),
+                    ]
+                    + FLASH_ARGS
+                )
                 if self.run_subprocess(cmd):
                     self.update_action_status("esp", "flash", "ok")
                     self.update_action_status("esp", "valid", "ok")
