@@ -110,7 +110,7 @@ Write-Host "      QFlash MainConfig.ini updated" -ForegroundColor Green
 Write-Host "[6/7] Copying installers..." -ForegroundColor Yellow
 
 Copy-Item "$INSTALLERS\JLink_Windows_V866_x86_64.exe" "$STAGING\installers\"
-Copy-Item "$INSTALLERS\puw10029.exe"                  "$STAGING\installers\"
+Copy-Item "$INSTALLERS\pew54007us.exe"                "$STAGING\installers\"
 Copy-Item "$WORKSPACE\install.bat"                    "$STAGING\"
 
 # ---- Step 7: Create ZIP ----

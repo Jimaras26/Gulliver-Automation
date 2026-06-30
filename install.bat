@@ -38,8 +38,8 @@ echo.
 
 REM ---- Step 2: Install Brother P-touch Editor ----
 echo  [2/4] Installing Brother P-touch Editor...
-REM puw10029.exe uses /S for unattended install (NSIS-based)
-"%~dp0installers\puw10029.exe" /S
+REM pew54007us.exe uses /S for unattended install (NSIS-based)
+"%~dp0installers\pew54007us.exe" /S
 if !errorlevel! neq 0 (
     echo         WARNING: P-touch installer exited with code !errorlevel!.
     echo         If a setup window appeared, complete it manually and re-run.

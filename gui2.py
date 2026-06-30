@@ -236,6 +236,12 @@ class GulliverApp(ctk.CTk):
         self.check_test_mode.pack(pady=10, anchor="w", padx=30)
         self.check_test_mode.select()
 
+        self.check_print_label = ctk.CTkCheckBox(
+            self.left_panel, text="5. Print Label"
+        )
+        self.check_print_label.pack(pady=5, anchor="w", padx=30)
+        self.check_print_label.select()
+
         # --- VOLTAGE DISPLAY ---
         self.volts_frame = ctk.CTkFrame(self.left_panel, fg_color="#1a1a1a")
         self.volts_frame.pack(pady=10, padx=20, fill="x")
@@ -524,7 +530,7 @@ class GulliverApp(ctk.CTk):
                     erase_cmd = [
                         JLINK_EXE,
                         "-device",
-                        "nRF52840_xxAA",
+                        "ATSAMD21J18A",
                         "-if",
                         "SWD",
                         "-speed",
@@ -569,7 +575,7 @@ class GulliverApp(ctk.CTk):
                 jlink_base_cmd = [
                     JLINK_EXE,
                     "-device",
-                    "nRF52840_xxAA",
+                    "ATSAMD21J18A",
                     "-if",
                     "SWD",
                     "-speed",
@@ -1018,7 +1024,8 @@ class GulliverApp(ctk.CTk):
             self.log(f"✅ Excel Updated: SN {sn}")
 
             # Print Label
-            self.print_label(sn)
+            if self.check_print_label.get():
+                self.print_label(sn)
 
             # Reset UI components for next unit
             self.sn_entry.configure(state="disabled")
