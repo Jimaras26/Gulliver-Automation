@@ -32,6 +32,8 @@ EXCEL_PATH = os.path.join(BASE_DIR, "Gulliver_Production_Log.xlsx")
 JLINK_EXE = r"C:\Program Files\SEGGER\JLink_V866\JLink.exe"
 JLINK_SCRIPT = os.path.join(BASE_DIR, "flash.txt")
 JLINK_LOG = os.path.join(BASE_DIR, r"logs\jlink_log.txt")
+LOCK_BOOTLOADER_SCRIPT = os.path.join(BASE_DIR, "lock_bootloader.txt")
+LOCK_EXPECTED = ["fc", "e9", "00", "d8", "5d", "fc", "ff", "ff"]
 
 # ======= Modem Update Configuration (Optional) =========
 QFLASH_PATH = os.path.join(BASE_DIR, "QFlash_V7.7")
@@ -615,6 +617,9 @@ class GulliverApp(ctk.CTk):
                         self.update_action_status("mcu", "valid", "ok")
                         self.log("✅ MCU Verified & Validated!")
                         time.sleep(2)
+                        if not self.lock_and_verify_bootloader(jlink_base_cmd):
+                            self.request_stop()
+                            return
                     else:
                         self.update_action_status("mcu", "valid", "fail")
                         self.log("❌ VERIFICATION FAILED!")
@@ -1099,6 +1104,41 @@ class GulliverApp(ctk.CTk):
             self.log(f"💾 Report saved for IMEI: {pure_imei}")
         except Exception as e:
             self.log(f"⚠️ Auto-log Error: {e}")
+
+    def lock_and_verify_bootloader(self, jlink_base_cmd):
+        """Write BOD33 config and lock bootloader with retry, verify via mem8, then power cycle"""
+        MAX_ATTEMPTS = 3
+        lock_cmd = jlink_base_cmd + ["-CommandFile", LOCK_BOOTLOADER_SCRIPT]
+
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            self.log(f"🔒 Locking bootloader (attempt {attempt}/{MAX_ATTEMPTS})...")
+            output, success = self.run_subprocess_with_capture(lock_cmd)
+
+            if not success:
+                if attempt < MAX_ATTEMPTS:
+                    self.log("⚠️ Write failed — retrying all commands from the beginning...")
+                    continue
+                self.log("❌ Bootloader lock FAILED after all attempts!")
+                return False
+
+            # Verify mem8 result: expect FC E9 00 D8 5D FC FF FF
+            for line in output.splitlines():
+                if "00804000" in line.lower() and "=" in line:
+                    rhs = line.split("=", 1)[1]
+                    found = [b.lower() for b in re.findall(r"[0-9a-fA-F]{2}", rhs)]
+                    if found[:8] == LOCK_EXPECTED:
+                        self.log("✅ Bootloader locked & verified! (FC E9 00 D8 5D FC FF FF)")
+                        # Power cycle to apply fuse changes before next step
+                        self.ser.write(b"CANCEL\n")
+                        time.sleep(2)
+                        self.ser.write(b"O\n")
+                        return True
+
+            self.log("❌ Bootloader lock verification FAILED (unexpected mem8 values)!")
+            return False
+
+        self.log("❌ Bootloader lock FAILED after all attempts!")
+        return False
 
     def print_label(self, serial_number):
         """Sends the Serial Number to Brother P-touch via b-PAC SDK"""

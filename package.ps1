@@ -70,9 +70,8 @@ $looseFiles = @(
     "Gulliver_Label.lbx",
     "erase.txt",
     "check_blank.txt",
-    "Gulliver_Barista_18_jtag.bin",
-    "Gulliver_Barista_19_jtag_Ryoma.bin",
-    "GULLIVER_V.54.19.260316_JTAG.bin"
+    "lock_bootloader.txt",
+    "Gulliver_barista54.19.260709_jtag.bin"
 )
 foreach ($f in $looseFiles) {
     $src = "$FW_BASE\$f"
@@ -90,7 +89,7 @@ if SWD
 speed 4000
 r
 halt
-loadfile "$INSTALL_DEST\Gulliver_Barista_19_jtag_Ryoma.bin",0x00000000
+loadfile "$INSTALL_DEST\Gulliver_barista54.19.260709_jtag.bin",0x00000000
 r
 g
 exit
