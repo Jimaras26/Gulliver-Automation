@@ -68,10 +68,11 @@ Write-Host "[5/7] Copying assets and firmware binaries..." -ForegroundColor Yell
 $looseFiles = @(
     "coffeeBean.png",
     "Gulliver_Label.lbx",
+    "GULLIVER_Expanded_Label.lbx",
     "erase.txt",
     "check_blank.txt",
     "lock_bootloader.txt",
-    "Gulliver_barista54.19.260709_jtag.bin"
+    "Gulliver_barista54.19.260726_JTAG.bin"
 )
 foreach ($f in $looseFiles) {
     $src = "$FW_BASE\$f"
@@ -89,7 +90,7 @@ if SWD
 speed 4000
 r
 halt
-loadfile "$INSTALL_DEST\Gulliver_barista54.19.260709_jtag.bin",0x00000000
+loadfile "$INSTALL_DEST\Gulliver_barista54.19.260726_JTAG.bin",0x00000000
 r
 g
 exit

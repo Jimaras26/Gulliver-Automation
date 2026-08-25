@@ -71,7 +71,7 @@ else:
 # Η διαδρομή του εκτελέσιμου του P-touch Editor (συνήθως είναι αυτή)
 PT_EDITOR_EXE = r"C:\Program Files (x86)\Brother\Ptedit54\ptedit54.exe"
 # Το αρχείο ετικέτας που έχεις σχεδιάσει
-LABEL_TEMPLATE = os.path.join(BASE_DIR, "Gulliver_Label.lbx")
+LABEL_TEMPLATE = os.path.join(BASE_DIR, "GULLIVER_Expanded_Label.lbx")
 # ======= UI Test List ================
 TEST_LIST = [
     "RS232",
@@ -93,7 +93,7 @@ class GulliverApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title(f"Bibecoffee Production Tool {VERSION}")
-        self.geometry("1250x980")
+        self.geometry("1250x1020")
         ctk.set_appearance_mode("dark")
         self.mcu_fw_version = "Unknown"
 
@@ -294,6 +294,27 @@ class GulliverApp(ctk.CTk):
             self.left_panel, placeholder_text="Enter SN...", height=35, state="disabled"
         )
         self.sn_entry.pack(pady=(5, 10), padx=30, fill="x")
+
+        label_fields = ctk.CTkFrame(self.left_panel, fg_color="transparent")
+        label_fields.pack(pady=(0, 8), padx=30, fill="x")
+        label_fields.columnconfigure(0, weight=1)
+        label_fields.columnconfigure(1, weight=1)
+        label_fields.columnconfigure(2, weight=1)
+
+        ctk.CTkLabel(label_fields, text="Properties", font=("Arial", 11)).grid(row=0, column=0, padx=(0, 3))
+        self.properties_entry = ctk.CTkEntry(label_fields, height=30, justify="center")
+        self.properties_entry.grid(row=1, column=0, sticky="ew", padx=(0, 3), pady=(2, 0))
+        self.properties_entry.insert(0, "STP02622 R.0")
+
+        ctk.CTkLabel(label_fields, text="PCB Name", font=("Arial", 11)).grid(row=0, column=1, padx=3)
+        self.pcbname_entry = ctk.CTkEntry(label_fields, height=30, justify="center")
+        self.pcbname_entry.grid(row=1, column=1, sticky="ew", padx=3, pady=(2, 0))
+        self.pcbname_entry.insert(0, "GULLIVER REV 5")
+
+        ctk.CTkLabel(label_fields, text="Prod. Date", font=("Arial", 11)).grid(row=0, column=2, padx=(3, 0))
+        self.date_entry = ctk.CTkEntry(label_fields, height=30, justify="center")
+        self.date_entry.grid(row=1, column=2, sticky="ew", padx=(3, 0), pady=(2, 0))
+        self.date_entry.insert(0, datetime.now().strftime("%d/%m/%Y"))
 
         self.assign_btn = ctk.CTkButton(
             self.left_panel,
@@ -863,6 +884,8 @@ class GulliverApp(ctk.CTk):
         """Activates Serial Number entry fields upon successful test"""
         self.sn_entry.configure(state="normal")
         self.assign_btn.configure(state="normal")
+        self.date_entry.delete(0, "end")
+        self.date_entry.insert(0, datetime.now().strftime("%d/%m/%Y"))
         self.sn_entry.focus_set()
 
     def update_test_ui(self, val):
@@ -1033,6 +1056,8 @@ class GulliverApp(ctk.CTk):
                 self.print_label(sn)
 
             # Reset UI components for next unit
+            self.sn_entry.configure(state="normal")
+            self.sn_entry.delete(0, "end")
             self.sn_entry.configure(state="disabled")
             self.assign_btn.configure(state="disabled")
             self.status_banner.configure(text="READY", fg_color="#333333")
@@ -1050,11 +1075,21 @@ class GulliverApp(ctk.CTk):
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
 
-            imei_raw = self.device_data.get("IMEI", "N/A")
-            iccid_raw = self.device_data.get("ICCID", "N/A")
-            imsi_raw = self.device_data.get("IMSI", "N/A")
-            fwver_raw = self.device_data.get("FWVER", "N/A")
+            imei_raw    = self.device_data.get("IMEI", "N/A")
+            iccid_raw   = self.device_data.get("ICCID", "N/A")
+            imsi_raw    = self.device_data.get("IMSI", "N/A")
+            fwver_raw   = self.device_data.get("FWVER", "N/A")
             modemver_raw = self.device_data.get("MODEMVER", "N/A")
+
+            # Fallback: parse from log buffer if device_data was not populated in time
+            if fwver_raw == "N/A":
+                m = re.search(r"FWVER:(\S+)", self.current_full_log)
+                if m:
+                    fwver_raw = m.group(1)
+            if modemver_raw == "N/A":
+                m = re.search(r"MODEMVER:(\S+)", self.current_full_log)
+                if m:
+                    modemver_raw = m.group(1)
 
             pure_imei = (
                 "".join(filter(str.isalnum, imei_raw))
@@ -1156,11 +1191,21 @@ class GulliverApp(ctk.CTk):
 
             # Άνοιγμα του αρχείου .lbx
             if obj.Open(LABEL_TEMPLATE):
-                # Αναζήτηση του αντικειμένου SerialNumber
                 txt_obj = obj.GetObject("SerialNumber")
 
+                prop_obj = obj.GetObject("Properties")
+                if prop_obj:
+                    prop_obj.Text = self.properties_entry.get().strip()
+
+                pcb_obj = obj.GetObject("PCBName")
+                if pcb_obj:
+                    pcb_obj.Text = self.pcbname_entry.get().strip()
+
+                date_obj = obj.GetObject("ProductionDate")
+                if date_obj:
+                    date_obj.Text = self.date_entry.get().strip()
+
                 if txt_obj:
-                    # Replace the text of the SerialNumber object with the actual serial number
                     txt_obj.Text = str(serial_number)
 
                     if obj.StartPrint("", 0):
